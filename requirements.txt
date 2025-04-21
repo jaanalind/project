@@ -1,0 +1,6 @@
+pandas
+apache-airflow
+polars
+ruff
+alembic
+psycopg2-binary
