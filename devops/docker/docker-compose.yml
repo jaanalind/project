@@ -1,20 +1,83 @@
 services:
-  airflow:
-    image: apache/airflow
-    container_name: airflow-standalone
-    command: standalone
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./../../airflow/dags:/opt/airflow/dags
-    restart: unless-stopped
-
-  database:
+  postgres:
     image: postgres
     restart: always
-    shm_size: 128mb
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
+      POSTGRES_DB: postgres
     ports:
       - "5432:5432"
+
+  airflow-init:
+    build: 
+      context: ../../airflow
+      dockerfile: Dockerfile
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://admin:admin@postgres/postgres
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=''
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=your-secret-key-here
+      - _AIRFLOW_DB_UPGRADE=true
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+    command: version
+    volumes:
+      - ../../airflow/dags:/opt/airflow/dags
+      - ../../airflow/library:/opt/airflow/library
+      - ../../chunks:/opt/airflow/chunks
+      - ../../raw_data:/opt/airflow/raw_data
+
+  airflow-webserver:
+    build: 
+      context: ../../airflow
+      dockerfile: Dockerfile
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://admin:admin@postgres/postgres
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=''
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=your-secret-key-here
+    volumes:
+      - ../../airflow/dags:/opt/airflow/dags
+      - ../../airflow/library:/opt/airflow/library
+      - ../../chunks:/opt/airflow/chunks
+      - ../../raw_data:/opt/airflow/raw_data
+    ports:
+      - "8080:8080"
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    build: 
+      context: ../../airflow
+      dockerfile: Dockerfile
+    depends_on:
+      - airflow-init
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://admin:admin@postgres/postgres
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=''
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=your-secret-key-here
+    volumes:
+      - ../../airflow/dags:/opt/airflow/dags
+      - ../../airflow/library:/opt/airflow/library
+      - ../../chunks:/opt/airflow/chunks
+      - ../../raw_data:/opt/airflow/raw_data
+    command: scheduler
+
+volumes:
+  postgres_data:
