@@ -3,10 +3,12 @@ from datetime import datetime
 from typing import Optional
 
 class TaxiRideSchema(pa.DataFrameModel):
+    class Config:
+        drop_invalid_rows = True
     trip_id: str = pa.Field(str_length={'min_value': 1, 'max_value': 64})
     taxi_id: str = pa.Field(str_length={'min_value': 1, 'max_value': 128})
-    trip_start_timestamp: datetime
-    trip_end_timestamp: datetime
+    trip_start_timestamp: str  # TODO
+    trip_end_timestamp: str
     trip_seconds: int = pa.Field(ge=0)
     trip_miles: float = pa.Field(ge=0)
     pickup_census_tract: Optional[str] = pa.Field(nullable=True)

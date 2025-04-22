@@ -49,7 +49,7 @@ with DAG(
 
         try:
             # Validate with Pandera directly on Polars DataFrame
-            validated_df = TaxiRideSchema.validate(df)
+            validated_df = TaxiRideSchema.validate(df, lazy=True)
             logger.info(f"Data validation successful for {raw_file}")
 
 
