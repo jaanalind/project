@@ -1,5 +1,4 @@
 import pandera.polars as pa
-from datetime import datetime
 from typing import Optional
 
 class TaxiRideSchema(pa.DataFrameModel):

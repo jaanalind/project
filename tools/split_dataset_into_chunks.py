@@ -1,23 +1,65 @@
-import pandas as pd
+import polars as pl
 from pathlib import Path
-import numpy as np
+
 # Config
-INPUT_CSV = "/home/kaspar/PycharmProjects/project/Taxi_Trips_-_2024_20240408.csv"  # Change if needed
+INPUT_CSV = "/home/kaspar/PycharmProjects/project/Taxi_Trips_-_2024_20240408.csv"
 OUTPUT_DIR = Path("/home/kaspar/PycharmProjects/project/chunks")
 TIMESTAMP_COLUMN = "Trip Start Timestamp"
+
+# Schema definition
+csv_schema = {
+    "Trip ID": pl.Utf8,
+    "Taxi ID": pl.Utf8,
+    "Trip Start Timestamp": pl.Utf8,
+    "Trip End Timestamp": pl.Utf8,
+    "Trip Seconds": pl.Int64,
+    "Trip Miles": pl.Float64,
+    "Pickup Census Tract": pl.Utf8,
+    "Dropoff Census Tract": pl.Utf8,
+    "Pickup Community Area": pl.Utf8,
+    "Dropoff Community Area": pl.Utf8,
+    "Fare": pl.Float64,
+    "Tips": pl.Float64,
+    "Tolls": pl.Float64,
+    "Extras": pl.Float64,
+    "Trip Total": pl.Float64,
+    "Payment Type": pl.Utf8,
+    "Company": pl.Utf8,
+    "Pickup Centroid Latitude": pl.Float64,
+    "Pickup Centroid Longitude": pl.Float64,
+    "Pickup Centroid Location": pl.Utf8,
+    "Dropoff Centroid Latitude": pl.Float64,
+    "Dropoff Centroid Longitude": pl.Float64,
+    "Dropoff Centroid Location": pl.Utf8
+}
 
 # Ensure output directory exists
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 datetime_format = "%m/%d/%Y %I:%M:%S %p"
-df = pd.read_csv(INPUT_CSV, parse_dates=[TIMESTAMP_COLUMN], date_format=datetime_format)
 
-# Floor timestamps to the week (Monday as start of week)
-df['week_start'] = df[TIMESTAMP_COLUMN].dt.to_period('W').apply(lambda r: r.start_time)
+# Read CSV with schema
+df = pl.read_csv(
+    INPUT_CSV,
+    schema=csv_schema,
+    try_parse_dates=False  # We'll parse dates separately since we have a specific format
+)
 
-# Group by week and export each as a separate file
-for week_start, group in df.groupby('week_start'):
+# Parse timestamp and create week column
+df = df.with_columns([
+    pl.col(TIMESTAMP_COLUMN)
+    .str.strptime(pl.Datetime, format=datetime_format)
+    .dt.truncate("1w")
+    .alias("week_start")
+])
+
+# Group by week and export
+for week_start in df.get_column("week_start").unique().sort():
     week_str = week_start.strftime("%Y_%m_%d")
+    week_df = df.filter(pl.col("week_start") == week_start)
+
     output_file = OUTPUT_DIR / f"week_{week_str}.csv"
-    group.drop(columns=['week_start']).to_csv(output_file, index=False)
-    print(f"Saved {output_file} with {len(group)} records")
+
+    # Drop week_start column and write to CSV
+    week_df.drop("week_start").write_csv(output_file)
+    print(f"Saved {output_file} with {week_df.height} records")
