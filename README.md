@@ -47,8 +47,12 @@ cd [projekti-kaust]
 conda env create -f environment.yml
 conda activate taxi_trip_processor
 ```
+3. Loo nädalased failid algandmetega faili põhjal:
+```bash
+python tools/split_dataset_into_chunks.py /path/to/your/input.csv
+```
 
-3. Käivita Docker Compose:
+4. Käivita Docker Compose:
 ```bash
 docker-compose up --build
 ```
