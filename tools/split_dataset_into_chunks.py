@@ -1,12 +1,15 @@
+"""
+This script was run once to create weekly taxi trip csv files
+"""
+
+
 import polars as pl
 from pathlib import Path
 
-# Config
 INPUT_CSV = "/home/kaspar/PycharmProjects/project/Taxi_Trips_-_2024_20240408.csv"
 OUTPUT_DIR = Path("/home/kaspar/PycharmProjects/project/chunks")
 TIMESTAMP_COLUMN = "Trip Start Timestamp"
 
-# Schema definition
 csv_schema = {
     "Trip ID": pl.Utf8,
     "Taxi ID": pl.Utf8,
@@ -33,19 +36,16 @@ csv_schema = {
     "Dropoff Centroid Location": pl.Utf8
 }
 
-# Ensure output directory exists
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 datetime_format = "%m/%d/%Y %I:%M:%S %p"
 
-# Read CSV with schema
 df = pl.read_csv(
     INPUT_CSV,
     schema=csv_schema,
     try_parse_dates=False  # We'll parse dates separately since we have a specific format
 )
 
-# Parse timestamp and create week column
 df = df.with_columns([
     pl.col(TIMESTAMP_COLUMN)
     .str.strptime(pl.Datetime, format=datetime_format)
@@ -53,13 +53,11 @@ df = df.with_columns([
     .alias("week_start")
 ])
 
-# Group by week and export
 for week_start in df.get_column("week_start").unique().sort():
     week_str = week_start.strftime("%Y_%m_%d")
     week_df = df.filter(pl.col("week_start") == week_start)
 
     output_file = OUTPUT_DIR / f"week_{week_str}.csv"
 
-    # Drop week_start column and write to CSV
     week_df.drop("week_start").write_csv(output_file)
     print(f"Saved {output_file} with {week_df.height} records")

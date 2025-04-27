@@ -1,83 +1,64 @@
-import datetime
 from airflow import DAG
 from airflow.decorators import task
+import datetime
 
-# Database connection string - should be in environment variables or Airflow connections
 DB_CONNECTION = "postgresql://admin:admin@app-postgres/postgres"
+PATH_TO_DBT_PROJECT = "/opt/airflow/taxi_trip_processor_dbt"
+PATH_TO_DBT_VENV = "/opt/airflow/dbt_venv/bin/activate"
 
 with DAG(
         dag_id="process_taxi_rides",
         start_date=datetime.datetime(2024, 1, 1),
+        is_paused_upon_creation=False,
         schedule="0 0 * * 1",
 ):
     @task()
-    def ensure_weekly_partitions(weeks_ahead: int = 12, **context):
+    def ensure_weekly_partitions(**context):
+        """
+        Creates partition for following week
+        """
         from sqlalchemy import create_engine, text
-        from datetime import datetime, timedelta
         from logging import getLogger
 
         logger = getLogger(__name__)
         engine = create_engine(DB_CONNECTION)
 
-        # Get the data interval start from the context
-        data_interval_start = context['data_interval_start']
-        # Calculate date range - start from the week of data being processed
-        start_date = data_interval_start - timedelta(days=data_interval_start.weekday())
-        end_date = start_date + timedelta(weeks=weeks_ahead)
+        start_date = context['data_interval_start']
 
-        logger.info(f"Ensuring partitions exist from {start_date} to {end_date}")
+        end_date = context['data_interval_end']
+        partition_name = f"taxi_rides_{start_date.strftime('%Y_%m_%d')}"
 
-        with engine.connect() as conn:
-            current = start_date
-            partitions_created = 0
+        logger.info(f"Creating partition from {start_date} to {end_date}")
 
-            while current < end_date:
-                next_week = current + timedelta(weeks=1)
-                partition_name = f"taxi_rides_{current.strftime('%Y_%m_%d')}"
+        with engine.begin() as conn:
+            check_sql = f"""
+                                SELECT EXISTS (
+                                    SELECT FROM pg_tables
+                                    WHERE schemaname = 'public'
+                                    AND tablename = '{partition_name}'
+                                );
+                            """
+            if not conn.execute(check_sql).fetchone()[0]:
+                create_partition_sql = text(f"""
+                        CREATE TABLE {partition_name} PARTITION OF taxi_rides
+                        FOR VALUES FROM ('{start_date.isoformat()}') TO ('{end_date.isoformat()}')
+                    """)
+                conn.execute(create_partition_sql)
+                logger.info(f"Created partition {partition_name}")
 
-                # Check if partition exists
-                exists = conn.execute(text(
-                    "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = :name)"
-                ), {"name": partition_name.lower()}).scalar()
-
-                if not exists:
-                    # Create weekly partition
-                    create_partition_sql = text("""
-                        CREATE TABLE IF NOT EXISTS :partition_name 
-                        PARTITION OF taxi_rides 
-                        FOR VALUES FROM (:start_date) TO (:end_date)
-                    """).bindparams(
-                        partition_name=partition_name,
-                        start_date=current,
-                        end_date=next_week
-                    )
-                    conn.execute(create_partition_sql)
-                    partitions_created += 1
-                    logger.info(f"Created partition {partition_name}")
-
-                current = next_week
-
-            # Ensure future partition exists
-            future_partition_sql = text("""
-                CREATE TABLE IF NOT EXISTS taxi_rides_future 
-                PARTITION OF taxi_rides 
-                FOR VALUES FROM (:end_date) TO (MAXVALUE)
-            """).bindparams(end_date=end_date)
-            
-            conn.execute(future_partition_sql)
-
-            logger.info(f"Created {partitions_created} new partitions")
-            return partitions_created
+        return partition_name
 
 
     @task()
     def extract_raw_taxi_rides(**context):
+        """
+        Imitates reading files from outside source and saving them locally
+        """
         import shutil
         from pathlib import Path
         from logging import getLogger
 
         logger = getLogger(__name__)
-        # Save raw CSV exactly as is
         data_interval_start = context['data_interval_start']
         file_date = data_interval_start.strftime("%Y_%m_%d")
         chunks_dir = Path("/opt/airflow/chunks")
@@ -90,14 +71,32 @@ with DAG(
         logger.info(f"Saved raw data: {raw_file}")
 
         return str(raw_file)
-        
+
+
     @task()
-    def validate_and_load_taxi_rides(raw_file: str):
+    def validate_and_load_taxi_rides(raw_file: str, **context):
         from schemas.taxi_schema import TaxiRideSchema
         from logging import getLogger
+        from sqlalchemy import create_engine, text
+        import datetime
+        import polars as pl
 
         logger = getLogger(__name__)
-        import polars as pl
+
+        data_interval_start = context['data_interval_start']
+        file_date = data_interval_start.strftime("%Y_%m_%d")
+        file_name = f"week_{file_date}.csv"
+
+        engine = create_engine(DB_CONNECTION)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT 1 FROM processed_files WHERE file_name = :file_name"),
+                {"file_name": file_name}
+            ).fetchone()
+
+            if result:
+                logger.info(f"File {file_name} has already been processed, skipping")
+                return
 
         csv_schema = {
             "Trip ID": pl.Utf8,
@@ -124,7 +123,6 @@ with DAG(
             "Dropoff Centroid Longitude": pl.Float64,
             "Dropoff Centroid Location": pl.Utf8
         }
-        # Read CSV with Polars
         df = pl.read_csv(raw_file, schema=csv_schema)
 
         logger.info(f"Loaded raw data with {df.height} rows and {df.width} columns")
@@ -155,53 +153,43 @@ with DAG(
             "Dropoff Centroid Location": "dropoff_centroid_location"
         }
         df = df.rename(column_mapping)
-        try:
-            # Validate with Pandera directly on Polars DataFrame
+
+        with engine.begin() as conn:
             validated_df = TaxiRideSchema.validate(df, lazy=True)
             logger.info(f"Data validation successful for {raw_file}")
 
-
-        except Exception as e:
-            logger.error(f"Error validating file {raw_file}: {str(e)}")
-            raise
-
-  #      # Count validation errors
-  #      error_counts = defaultdict(int)
-  #      try:
-  #          TaxiRideSchema.validate(df, lazy=True)
-  #      except pa.errors.SchemaErrors as e:
-  #          error_data = e.message
-  #          print(error_data)
-  #          for error in error_data["DATA"]["DATAFRAME_CHECK"]:
-  #              error_key = f"{error['column']}: {error['check']}"
-  #              error_counts[error_key] += 1
-#
-  #          # Log error summary
-  #      if error_counts:
-  #          logger.info("Validation error summary:")
-  #          for error_type, count in error_counts.items():
-  #              logger.info(f"- {error_type}: {count} occurrences")
-
-        logger.info(len(validated_df))
-        try:
-            # Write directly to database using Polars
-            rows_written = validated_df.write_database(
+            validated_df.write_database(
                 table_name="taxi_rides",
                 connection=DB_CONNECTION,
                 if_table_exists="append",
                 engine="sqlalchemy"
             )
 
-            logger.info(f"Successfully loaded {rows_written} rows to database")
-            return rows_written
+            conn.execute(
+                text("""
+                     INSERT INTO processed_files (file_name, processed_at)
+                     VALUES (:file_name, :processed_at)
+                     """),
+                {
+                    "file_name": file_name,
+                    "processed_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }
+            )
 
-        except Exception as e:
-            logger.error(f"Error loading data to database: {str(e)}")
-            raise
+
+    @task.bash(
+        env={"PATH_TO_DBT_VENV": PATH_TO_DBT_VENV}, 
+        cwd=PATH_TO_DBT_PROJECT,
+        pool="default_pool",
+        pool_slots=128
+    )
+    def dbt_taxi_driver_swap_model() -> str:
+        return "source $PATH_TO_DBT_VENV && dbt run --profiles-dir=/opt/airflow/taxi_trip_processor_dbt/.dbt"
+
 
     ensure_partitions = ensure_weekly_partitions()
     extract_task = extract_raw_taxi_rides()
     validate_and_load_task = validate_and_load_taxi_rides(extract_task)
+    dbt_taxi_driver_swap_model_task = dbt_taxi_driver_swap_model()
 
-    # Set task dependencies
-    ensure_partitions >> extract_task >> validate_and_load_task
+    ensure_partitions >> extract_task >> validate_and_load_task >> dbt_taxi_driver_swap_model_task

@@ -1,0 +1,7 @@
+version: 2
+
+sources:
+  - name: raw  # You can keep the source name as 'raw', but it's entirely up to you
+    schema: public  # This specifies that the schema is 'public'
+    tables:
+      - name: taxi_rides  

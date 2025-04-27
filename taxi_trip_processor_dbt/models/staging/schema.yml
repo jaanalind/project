@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_taxi_trips
+    description: "Cleaned and filtered taxi rides"
+    columns:
+      - name: id
+        tests:
+          - not_null
+      - name: trip_id
+        tests:
+          - not_null
+          - unique
+      - name: trip_total
+        tests:
+          - not_null

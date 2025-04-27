@@ -1,0 +1,12 @@
+taxi_trip_processor_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: app-postgres
+      user: admin
+      password: admin
+      dbname: postgres
+      schema: public
+      threads: 1
+      port: 5432 

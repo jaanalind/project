@@ -6,7 +6,7 @@ class TaxiRideSchema(pa.DataFrameModel):
         drop_invalid_rows = True
     trip_id: str = pa.Field(str_length={'min_value': 1, 'max_value': 64})
     taxi_id: str = pa.Field(str_length={'min_value': 1, 'max_value': 128})
-    trip_start_timestamp: str  # TODO
+    trip_start_timestamp: str
     trip_end_timestamp: str
     trip_seconds: int = pa.Field(ge=0)
     trip_miles: float = pa.Field(ge=0)
