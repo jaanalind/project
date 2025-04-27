@@ -90,3 +90,6 @@ Hetkel on kahjuks kõik credentialid hard-coded ja pole lihtsat viisi, et rakend
 
 Airflow peaks olema pigem orkestreerija kui jooksutaja ja oleks ideaalne, kui taskide kood jookseks eraldi venv-is.
 Samuti saaksid taskid joosta teistel masinatel näiteks Celery executory abil.
+
+Erinevaid detaile kindlasti leiab veel nagu nt andmete hoidmine public schema all jpm, mis ei sobi production
+rakendusse.
