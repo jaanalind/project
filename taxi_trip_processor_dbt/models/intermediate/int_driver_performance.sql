@@ -1,10 +1,7 @@
 -- models/intermediate/int_driver_shifts.sql
 {{ config(
     materialized='incremental',
-    unique_key=['taxi_id', 'trip_id'],
-    pre_hook=[
-        "{% if is_incremental() and not flags.FULL_REFRESH %}DROP TABLE IF EXISTS {{ this }};{% endif %}"
-    ]
+    unique_key=['taxi_id', 'trip_id']
 ) }}
 
 WITH trip_with_previous AS (

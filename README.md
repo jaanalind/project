@@ -6,6 +6,7 @@ See projekt on mõeldud Chicago taksosõitude andmete kogumiseks, töötlemiseks
 ## Projekti Arhitektuur
 
 ### Komponendid
+- **Migratsioonid**: Alembic migratsioonid andmebaasi haldamiseks
 - **Orkestreerimine**: Apache Airflow DAG-id andmevoogude haldamiseks
   - Orkestreeritud on kõik tööd alates andmete sisselugemisest, kuni dbt rakendamiseni
 - **Andmete valideerimine** Kasutatud on Pythoni teeki "Pandera". Määratud sobivad vahemikud andmeväljade jaoks,

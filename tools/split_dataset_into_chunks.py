@@ -14,7 +14,7 @@ def parse_args():
 def main():
     args = parse_args()
     INPUT_CSV = args.input_csv
-    OUTPUT_DIR = Path("/home/kaspar/PycharmProjects/project/chunks")
+    OUTPUT_DIR = Path.cwd() / "chunks"
     TIMESTAMP_COLUMN = "Trip Start Timestamp"
 
     csv_schema = {
